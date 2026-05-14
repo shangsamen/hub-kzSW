@@ -1,0 +1,136 @@
+import torch
+import torch.nn as nn
+import math
+
+
+class TransformerEncoderLayer(nn.Module):
+    """
+    标准的 Transformer Encoder Layer 实现
+    
+    结构:
+    1. 多头自注意力 (Multi-Head Self-Attention)
+    2. 前馈神经网络 (Feed-Forward Network)
+    3. 每个子层都有残差连接和 Layer Normalization
+    
+    参数:
+        d_model: 模型的维度 (默认512)
+        nhead: 注意力头的数量 (默认8)
+        dim_feedforward: 前馈网络的中间层维度 (默认2048)
+        dropout: dropout概率 (默认0.1)
+    """
+    
+    def __init__(self, d_model=512, nhead=8, dim_feedforward=2048, dropout=0.1):
+        super(TransformerEncoderLayer, self).__init__()
+        
+        self.d_model = d_model
+        self.nhead = nhead
+        
+        # 1. 多头自注意力层
+        self.self_attn = nn.MultiheadAttention(
+            embed_dim=d_model,
+            num_heads=nhead,
+            dropout=dropout,
+            batch_first=True  # 使用batch_first，输入输出形状为 (batch, seq, feature)
+        )
+        
+        # 2. 前馈神经网络 (FFN)
+        self.linear1 = nn.Linear(d_model, dim_feedforward)
+        self.activation = nn.ReLU()
+        self.dropout = nn.Dropout(dropout)
+        self.linear2 = nn.Linear(dim_feedforward, d_model)
+        
+        # 3. Layer Normalization 层
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        
+        # 4. Dropout层
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
+        
+    def forward(self, src, src_mask=None, src_key_padding_mask=None):
+        """
+        前向传播
+        
+        参数:
+            src: 输入张量，形状 (batch_size, seq_len, d_model)
+            src_mask: 注意力掩码 (可选)
+            src_key_padding_mask: key的padding掩码 (可选)
+            
+        返回:
+            输出张量，形状 (batch_size, seq_len, d_model)
+        """
+        
+        # ========== 子层1: 多头自注意力 ==========
+        # Pre-LN: 先LayerNorm，再计算注意力
+        src2 = self.norm1(src)
+        
+        # 计算自注意力: Q=K=V=src2
+        src2, attn_weights = self.self_attn(
+            src2, src2, src2,
+            attn_mask=src_mask,
+            key_padding_mask=src_key_padding_mask
+        )
+        
+        # 残差连接 + dropout
+        src = src + self.dropout1(src2)
+        
+        # ========== 子层2: 前馈神经网络 ==========
+        # Pre-LN: 先LayerNorm
+        src2 = self.norm2(src)
+        
+        # FFN: Linear -> ReLU -> Dropout -> Linear
+        src2 = self.linear2(self.dropout(self.activation(self.linear1(src2))))
+        
+        # 残差连接 + dropout
+        src = src + self.dropout2(src2)
+        
+        return src
+
+
+# ========== 使用示例 ==========
+if __name__ == "__main__":
+    print("=" * 60)
+    print("Transformer Encoder Layer 示例")
+    print("=" * 60)
+    
+    # 参数设置
+    batch_size = 2
+    seq_len = 10
+    d_model = 512
+    nhead = 8
+    
+    print(f"\n参数:")
+    print(f"  batch_size = {batch_size}")
+    print(f"  seq_len = {seq_len}")
+    print(f"  d_model = {d_model}")
+    print(f"  nhead = {nhead}")
+    
+    # 创建模型
+    encoder_layer = TransformerEncoderLayer(
+        d_model=d_model,
+        nhead=nhead,
+        dim_feedforward=2048,
+        dropout=0.1
+    )
+    
+    print(f"\n模型结构:")
+    print(encoder_layer)
+    
+    # 创建随机输入
+    src = torch.randn(batch_size, seq_len, d_model)
+    print(f"\n输入形状: {src.shape}")
+    
+    # 前向传播
+    output = encoder_layer(src)
+    print(f"输出形状: {output.shape}")
+    
+    # 统计参数量
+    total_params = sum(p.numel() for p in encoder_layer.parameters())
+    trainable_params = sum(p.numel() for p in encoder_layer.parameters() if p.requires_grad)
+    print(f"\n模型参数量:")
+    print(f"  总参数量: {total_params:,}")
+    print(f"  可训练参数量: {trainable_params:,}")
+    
+    print("\n" + "=" * 60)
+    print("示例运行完成！")
+    print("=" * 60)
